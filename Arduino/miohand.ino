@@ -1,281 +1,263 @@
 #include<SoftwareSerial.h>
 
-/*stby siempre activo: stby = 10kOhm 3,3V
-stby = */
+//definicion de direcciones
+const byte CCW = 0;
+const byte CW = 1;
+const byte SHORT_BRAKE = 2;
+const byte STOP = 3;
 
-/* direccion CW = 1 direccion con el tiempo; CCW = 1 direccion contra tiempo. 
-CW y CCW = 1 short brake CW y CCW = 0 brake */
+//definicion de dedos
+const byte METACARPO = 1;
+const byte FALANGE = 0;
+const byte INDICE = 2;
+const byte MEDIO = 3;
+const byte M_A = 4;
 
-const int dirCW_indice = 4;
-const int dirCCW_indice = 8;
-const int dirCW_medio = 12;
-const int dirCCW_medio = 13;
-const int dirCW_pulgar = 14;
-const int dirCCW_pulgar = 15;
-const int dirCW_pulgar_dos = 16;
-const int dirCCW_pulgar_dos = 17;
-const int dirCW_minique_anular = 18;
-const int dirCCW_minique_anular = 19;
+//definicion de indices (usa CW y CCW de las direcciones como indice de array tambien).
+const byte ISR = 2;
+const byte PWM = 3;
 
-/*5 interrupt pins encoder, declarar como interrupt en setup*/
+//definicion de PINS por dedo (x) e indices (y).
+const byte MANO[][4] = {
+  {A1, A0, 3, 10},
+  {13, 12, 7, 11},
+  {A3, 4, 2, 9},
+  {8, A2, 1, 6},
+  {A5, A4, 0, 5}
+};
 
-const int indice = 1;
-const int medio = 0;
-const int pulgar = 2;
-const int pulgar_dos = 3;
-const int minique_anular = 7;
+//definicion de poses
+const byte DESCANSO = 0;
+const byte PUNO = 1;
+const byte W_IN = 2;
+const byte W_OUT = 3;
+const byte ABIERTA = 4;
+const byte DOBLE_CLICK = 5;
 
-/*pwm pins aplicar PWM uC*/
+//definicion de indices de pose
+const byte DESTINO = 0;
+const byte ANTERIOR = 1;
+const byte ESTADO = 2;
 
-const int pwm_pulgar = 5;
-const int pwm_pulgar_dos = 6;
-const int pwm_indice = 9;
-const int pwm_medio = 10;
-const int pwm_minique_anular = 11;
+//definicion de estados de pose
+const byte REPOSO = 0;
+const byte MOVIMIENTO = 1;
+
+//global de rotacion para interrupts
+volatile int rotacion[] = {0, 0, 0, 0, 0};
+
+byte POSE[][4] = {
+  {0, 0, 0, 0},
+  {0, 0, 0, 0},
+  {0, 0, 0, 0},
+  {0, 0, 0, 0},
+  {0, 0, 0, 0}
+};
+
+//valores destino de rotaciones para poses
+int POSES[][6] = {
+  {0, 0, 0, 0, 0, 0},
+  {0, 0, 0, 0, 0, 0},
+  {0, 3000, 0, 0, 0, 0},
+  {0, 3000, 0, 0, 0, 0},
+  {0, 3000, 0, 0, 0, 0}
+};
 
 /*serial input USB valores del raspberry*/
 
-byte comm_rasp;
-byte comm_rasp_raw;
-
-/*variables que se ocupan en el sketch*/
-
-long rotacion_pulgar = 0;
-long rotacion_pulgar_dos = 0;
-long rotacion_indice = 0;
-long rotacion_medio = 0;
-long rotacion_minique_anular = 0;
+String comm_rasp = "0";
+String actual = "0";
 
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
   //declarar pins PWM como Output:
-  pinMode(pwm_pulgar, OUTPUT);
-  pinMode(pwm_pulgar_dos, OUTPUT);
-  pinMode(pwm_indice, OUTPUT);
-  pinMode(pwm_medio, OUTPUT);
-  pinMode(pwm_minique_anular, OUTPUT);
+  pinMode(MANO[METACARPO][PWM], OUTPUT);
+  pinMode(MANO[FALANGE][PWM], OUTPUT);
+  pinMode(MANO[INDICE][PWM], OUTPUT);
+  pinMode(MANO[MEDIO][PWM], OUTPUT);
+  pinMode(MANO[M_A][PWM], OUTPUT);
   //todo pwm 0
-  analogWrite(pwm_pulgar, 0);
-  analogWrite(pwm_pulgar_dos, 0);
-  analogWrite(pwm_indice, 0);
-  analogWrite(pwm_medio, 0);
-  analogWrite(pwm_minique_anular, 0);
+  analogWrite(MANO[METACARPO][PWM], 0);
+  analogWrite(MANO[FALANGE][PWM], 0);
+  analogWrite(MANO[INDICE][PWM], 0);
+  analogWrite(MANO[MEDIO][PWM], 0);
+  analogWrite(MANO[M_A][PWM], 0);
   //declarar pins direccion como Output:
-  pinMode(dirCW_pulgar, OUTPUT);
-  pinMode(dirCCW_pulgar, OUTPUT);
-  pinMode(dirCW_pulgar_dos, OUTPUT);
-  pinMode(dirCCW_pulgar_dos, OUTPUT);
-  pinMode(dirCW_indice, OUTPUT);
-  pinMode(dirCCW_indice, OUTPUT);
-  pinMode(dirCW_medio, OUTPUT);
-  pinMode(dirCCW_medio, OUTPUT);
-  pinMode(dirCW_minique_anular, OUTPUT);
-  pinMode(dirCCW_minique_anular, OUTPUT);
+  pinMode(MANO[METACARPO][CW], OUTPUT);
+  pinMode(MANO[METACARPO][CCW], OUTPUT);
+  pinMode(MANO[FALANGE][CW], OUTPUT);
+  pinMode(MANO[FALANGE][CCW], OUTPUT);
+  pinMode(MANO[INDICE][CW], OUTPUT);
+  pinMode(MANO[INDICE][CCW], OUTPUT);
+  pinMode(MANO[MEDIO][CW], OUTPUT);
+  pinMode(MANO[MEDIO][CCW], OUTPUT);
+  pinMode(MANO[M_A][CW], OUTPUT);
+  pinMode(MANO[M_A][CCW], OUTPUT);
   //declarar pins encoders
-  pinMode(pulgar, INPUT);  
-  pinMode(pulgar_dos, INPUT);
-  pinMode(indice, INPUT);  
-  pinMode(medio, INPUT);
-  pinMode(minique_anular, INPUT);
+  pinMode(MANO[METACARPO][ISR], INPUT);  
+  pinMode(MANO[FALANGE][ISR], INPUT);
+  pinMode(MANO[INDICE][ISR], INPUT);  
+  pinMode(MANO[MEDIO][ISR], INPUT);
+  pinMode(MANO[M_A][ISR], INPUT);
   //declarar pins Interrupts
-  attachInterrupt(digitalPinToInterrupt(pulgar), enc_pulgar, FALLING);
-  attachInterrupt(digitalPinToInterrupt(pulgar_dos), enc_pulgar_dos, FALLING);
-  attachInterrupt(digitalPinToInterrupt(indice), enc_indice, FALLING);
-  attachInterrupt(digitalPinToInterrupt(medio), enc_medio, FALLING);
-  attachInterrupt(digitalPinToInterrupt(minique_anular), enc_minique_anular, FALLING);
+  attachInterrupt(digitalPinToInterrupt(MANO[METACARPO][ISR]), isr_motor_metacarpo, FALLING);
+  attachInterrupt(digitalPinToInterrupt(MANO[FALANGE][ISR]), isr_motor_falange, FALLING);
+  attachInterrupt(digitalPinToInterrupt(MANO[INDICE][ISR]), isr_motor_indice, FALLING);
+  attachInterrupt(digitalPinToInterrupt(MANO[MEDIO][ISR]), isr_motor_medio, FALLING);
+  attachInterrupt(digitalPinToInterrupt(MANO[M_A][ISR]), isr_motor_m_a, FALLING);
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
   // Communicacion con el raspberry
   serial_comm();
-  //Si llega un 1 significa pinzabidigital
-  switch(comm_rasp){
-  case 49:
-    pinzabidigital();
-    break;
-  //Si llega un 2...
-  case 50:
-    pinzatripode();
-    break;
-  //Si llega un 3...
-  case 51:
-    semiflexion_indice();
-    break;
-  //Si llega un 4...
-  case 52:
-    presapalmar();
-    break;
-  //Si llega un 5...
-  case 53:
-    extension();
-    break; 
-  //Si llega un 6...
-  case 54:
-    flexion();
-    break;
-  //Si llega un 7...
-  case 55:
-    stopp();
-    break;
+  if(comm_rasp != actual){
+    if(comm_rasp == "1"){
+      POSE[FALANGE][DESTINO] = PUNO;
+      POSE[METACARPO][DESTINO] = PUNO;
+      POSE[INDICE][DESTINO] = PUNO;
+      POSE[MEDIO][DESTINO] = PUNO;
+      POSE[M_A][DESTINO] = PUNO;
+    } else if(comm_rasp == "4"){
+      POSE[FALANGE][DESTINO] = ABIERTA;
+      POSE[METACARPO][DESTINO] = ABIERTA;
+      POSE[INDICE][DESTINO] = ABIERTA;
+      POSE[MEDIO][DESTINO] = ABIERTA;
+      POSE[M_A][DESTINO] = ABIERTA;
+    } else if(comm_rasp == "6"){
+      full_stop();
+      Serial.println("Full Stop!");
+      actual = comm_rasp;
+    } else if (comm_rasp == "valores"){
+      Serial.println("Falange: " + String(rotacion[FALANGE]) + ", Metacarpo: " + String(rotacion[METACARPO]) + ", Indice: " + String(rotacion[INDICE]) + ", Medio: " + String(rotacion[MEDIO]) + ", A_M: "+ String(rotacion[M_A]));
+      actual = comm_rasp;
+    } else {
+      debug();
+      actual = comm_rasp;
+    }
   }
+  check_dedo(FALANGE);
+  check_dedo(METACARPO);
+  check_dedo(INDICE);
+  check_dedo(MEDIO);
+  check_dedo(M_A);
+}
+
+void debug(){
+  String dedos[] = {"Falange", "Metacarpo", "Indice", "Medio", "A_M"};
+  String direcciones[] = {"CCW", "CW"};
+  byte dedo = comm_rasp.substring(0,1).toInt();
+  byte dir = comm_rasp.substring(2,3).toInt();
+  byte speed = comm_rasp.substring(4).toInt();
+  Serial.println(dedos[dedo] + " - " + direcciones[dir] + " - " + speed + " | " + comm_rasp + " | " + String(MANO[dedo][ISR]) + ":" + String(MANO[dedo][dir]) + ":" + String(MANO[dedo][PWM]));
+  set_direction(dedo, dir);
+  set_speed(dedo, speed);
+}
+
+void check_dedo(byte dedo){
+  if(POSE[dedo][ESTADO] == REPOSO && POSE[dedo][DESTINO] != POSE[dedo][ANTERIOR]){
+    start_dedo(dedo);
+  } else if (POSE[dedo][ESTADO] == MOVIMIENTO && get_direction(dedo) == CCW && (POSES[POSE[dedo][DESTINO]][dedo] - rotacion[dedo]) < 0 ){
+    stop_dedo(dedo);
+  } else if (POSE[dedo][ESTADO] == MOVIMIENTO && get_direction(dedo) == CW && (POSES[POSE[dedo][DESTINO]][dedo] - rotacion[dedo]) > 0 ){
+    stop_dedo(dedo);
+  }
+}
+
+void start_dedo(byte dedo){
+  int check = POSE[dedo][DESTINO] - rotacion[dedo];
+  byte dir;
+  if(check <= 0){
+    dir = CW;
+  } else {
+    dir = CCW;
+  }
+  set_direction(dedo, dir);
+  set_speed(dedo, 250);
+  POSE[dedo][ESTADO] = MOVIMIENTO;
+}
+
+void stop_dedo(byte dedo){
+  set_speed(dedo, 0);
+  POSE[dedo][ESTADO] = REPOSO;
+  POSE[dedo][ANTERIOR] = POSE[dedo][DESTINO];
+}
+
+void full_stop(){
+  set_speed(METACARPO, 0);
+  set_speed(FALANGE, 0);
+  set_speed(INDICE, 0);
+  set_speed(MEDIO, 0);
+  set_speed(M_A, 0);
+}
+
+void isr_motor_metacarpo(){
+  isr_motor(METACARPO);
+}
+
+void isr_motor_falange(){
+  isr_motor(FALANGE);
+}
+
+void isr_motor_indice(){
+  isr_motor(INDICE);
+}
+
+void isr_motor_medio(){
+  isr_motor(MEDIO);
+}
+
+void isr_motor_m_a(){
+  isr_motor(M_A);
+}
+
+void isr_motor(int dedo){
+  int dir = get_direction(dedo);
+  if(dir == CW){
+    rotacion[dedo]--;
+  } else if(dir == CCW){
+    rotacion[dedo]++;
+  }
+}
+
+int get_direction(int dedo){
+  int dedo_cw = digitalRead(MANO[dedo][CW]);
+  int dedo_ccw = digitalRead(MANO[dedo][CCW]);
+  if(POSE[dedo][PWM] == 0){
+    return SHORT_BRAKE;
+  } else if(dedo_cw == LOW && dedo_ccw == HIGH){
+    return CCW;
+  } else if(dedo_cw == HIGH && dedo_ccw == LOW){
+    return CW;
+  } else if(dedo_cw == LOW && dedo_ccw == LOW){
+    return STOP;
+  } else {
+    return SHORT_BRAKE;
+  }
+}
+
+void set_direction(int dedo, int dir){
+  if(dir == CW){
+    digitalWrite(MANO[dedo][CW], HIGH);
+    digitalWrite(MANO[dedo][CCW], LOW);
+  } else if(dir == CCW){
+    digitalWrite(MANO[dedo][CW], LOW);
+    digitalWrite(MANO[dedo][CCW], HIGH);
+  } else if (dir == STOP){
+    digitalWrite(MANO[dedo][CW], LOW);
+    digitalWrite(MANO[dedo][CCW], LOW);
+  }
+}
+
+void set_speed(int dedo, byte speed){
+  analogWrite(MANO[dedo][PWM], speed);
+  POSE[dedo][PWM] = speed;
 }
 
 //Serial comunicacion
 void serial_comm(){
-    if( Serial.available() ){
-    comm_rasp_raw = Serial.read();
-    if(comm_rasp_raw <= 55 && comm_rasp_raw >= 49){
-      comm_rasp = comm_rasp_raw;
-    }
-    Serial.print("Recibido: ");
-    Serial.println(comm_rasp);
+  if( Serial.available() ){
+    comm_rasp = Serial.readString();
   }
-  return comm_rasp;
-}
-
-//acciones de los motores
-void pinzabidigital(){
-  if(rotacion_pulgar<695){
-    digitalWrite(dirCW_pulgar,LOW);
-    digitalWrite(dirCCW_pulgar,HIGH);
-    analogWrite(pwm_pulgar, 30);
-  }
-  if(rotacion_pulgar>705){
-    digitalWrite(dirCW_pulgar,HIGH);
-    digitalWrite(dirCCW_pulgar,LOW);
-    analogWrite(pwm_pulgar, 30);
-  }
-  if(rotacion_pulgar<=705 && rotacion_pulgar>=695){
-    digitalWrite(dirCW_pulgar,LOW);
-    digitalWrite(dirCCW_pulgar,LOW);
-    analogWrite(pwm_pulgar, 0);
-  }
-  if(rotacion_pulgar_dos>505){
-    digitalWrite(dirCW_pulgar_dos,HIGH);
-    digitalWrite(dirCCW_pulgar_dos,LOW);
-    analogWrite(pwm_pulgar_dos, 30);
-   }
-  if(rotacion_pulgar_dos<495){
-    digitalWrite(dirCW_pulgar_dos,LOW);
-    digitalWrite(dirCCW_pulgar_dos,HIGH);
-    analogWrite(pwm_pulgar_dos, 30);
-  }  
-  if(rotacion_pulgar_dos>=495 && rotacion_pulgar_dos<=505){
-    digitalWrite(dirCW_pulgar_dos,LOW);
-    digitalWrite(dirCCW_pulgar_dos,LOW);
-    analogWrite(pwm_pulgar_dos, 0);
-  }
-  //Serial.print("pinzabidigital");
-}
-
-void pinzatripode(){
-  Serial.print("pinzatripode");
-}
-
-void semiflexion_indice(){
-  Serial.print("semflexion_indice");
-}
-
-void presapalmar(){
-  Serial.print("presapalmar");
-}
-
-void extension(){
-  if(rotacion_pulgar>0){
-    digitalWrite(dirCW_pulgar,HIGH);
-    digitalWrite(dirCCW_pulgar,LOW);
-    analogWrite(pwm_pulgar, 30);
-  }
-  if(rotacion_pulgar<=0){
-    digitalWrite(dirCW_pulgar,LOW);
-    digitalWrite(dirCCW_pulgar,LOW);
-    analogWrite(pwm_pulgar, 0);
-  }
-  if(rotacion_pulgar_dos>0){
-    digitalWrite(dirCW_pulgar_dos,HIGH);
-    digitalWrite(dirCCW_pulgar_dos,LOW);
-    analogWrite(pwm_pulgar_dos, 30);
-  }
-  if(rotacion_pulgar_dos<=0){
-    digitalWrite(dirCW_pulgar_dos,LOW);
-    digitalWrite(dirCCW_pulgar_dos,LOW);
-    analogWrite(pwm_pulgar_dos, 0);
-  }
- // Serial.print("extension");
-}
-
-void flexion(){
-  Serial.print("flexion");
-}
-void stopp(){
-  //Serial.print("para los motores");
-  analogWrite(pwm_pulgar, 0);
-  analogWrite(pwm_pulgar_dos, 0);
-}
-
-
-//funciones de los encoders
-void enc_pulgar(){
-  if(digitalRead(dirCW_pulgar) == LOW && digitalRead(dirCCW_pulgar) == HIGH){
-      rotacion_pulgar++;
-      Serial.println(rotacion_pulgar);
-  return rotacion_pulgar;
-    }
-  else if(digitalRead(dirCW_pulgar) == HIGH && digitalRead(dirCCW_pulgar) == LOW){
-      rotacion_pulgar--; 
-     Serial.println(rotacion_pulgar);
-  return rotacion_pulgar;
-    } 
-}
-
-void enc_pulgar_dos(){
-   if(digitalRead(dirCW_pulgar_dos) == LOW && digitalRead(dirCCW_pulgar_dos) == HIGH){
-      rotacion_pulgar_dos++;
-      Serial.print("no2: ");
-      Serial.println(rotacion_pulgar_dos);
-  return rotacion_pulgar;
-    }
-  else if(digitalRead(dirCW_pulgar_dos) == HIGH && digitalRead(dirCCW_pulgar_dos) == LOW){
-      rotacion_pulgar_dos--;
-      Serial.print("no2: ");
-      Serial.println(rotacion_pulgar_dos);
-  return rotacion_pulgar;
-    } 
-}
-
-void enc_indice(){
-   if(digitalRead(dirCW_indice) == HIGH && digitalRead(dirCCW_indice) == LOW){
-      rotacion_indice++;
-  return rotacion_pulgar;
-    }
-  else if(digitalRead(dirCW_indice) == LOW && digitalRead(dirCCW_indice) == HIGH){
-      rotacion_indice--;
-  return rotacion_pulgar;
-    } 
-}
-
-void enc_medio(){
-   if(digitalRead(dirCW_medio) == HIGH && digitalRead(dirCCW_medio) == LOW)
-    {
-      rotacion_medio++;
-  return rotacion_pulgar;
-    }
-  else if(digitalRead(dirCW_medio) == LOW && digitalRead(dirCCW_medio) == HIGH){
-      rotacion_medio--;
-  return rotacion_pulgar;
-    } 
-}
-
-void enc_minique_anular(){
-   if(digitalRead(dirCW_minique_anular) == HIGH && digitalRead(dirCCW_minique_anular) == LOW)
-    {
-      rotacion_minique_anular++;
-  return rotacion_pulgar;
-    }
-  else if(digitalRead(dirCW_minique_anular) == LOW && digitalRead(dirCCW_minique_anular) == HIGH){
-      rotacion_minique_anular--;
-  return rotacion_pulgar;
-    } 
 }
