@@ -37,22 +37,20 @@ const byte DOBLE_CLICK = 5;
 //definicion de indices de pose
 const byte DESTINO = 0;
 const byte ANTERIOR = 1;
-const byte ESTADO = 2;
 
 //definicion de estados de pose
-const byte REPOSO = 0;
-const byte MOVIMIENTO = 1;
+const byte ESPERA = 0;
+const byte PROCESO = 1;
+const byte TERMINADO = 2;
 
 //global de rotacion para interrupts
 volatile int rotacion[] = {0, 0, 0, 0, 0};
 
-byte POSE[][4] = {
-  {0, 0, 0, 0},
-  {0, 0, 0, 0},
-  {0, 0, 0, 0},
-  {0, 0, 0, 0},
-  {0, 0, 0, 0}
-};
+byte pose[] = {0, 0};
+
+byte estado[] = {2, 2, 2, 2, 2};
+
+byte pwms[] = {0, 0, 0, 0, 0};
 
 //valores destino de rotaciones para poses
 int POSES[][6] = {
@@ -114,17 +112,13 @@ void loop() {
   serial_comm();
   if(comm_rasp != actual){
     if(comm_rasp == "1"){
-      POSE[FALANGE][DESTINO] = PUNO;
-      POSE[METACARPO][DESTINO] = PUNO;
-      POSE[INDICE][DESTINO] = PUNO;
-      POSE[MEDIO][DESTINO] = PUNO;
-      POSE[M_A][DESTINO] = PUNO;
+      set_pose(PUNO);
+      Serial.println("Puño!");
+      actual = comm_rasp;
     } else if(comm_rasp == "4"){
-      POSE[FALANGE][DESTINO] = ABIERTA;
-      POSE[METACARPO][DESTINO] = ABIERTA;
-      POSE[INDICE][DESTINO] = ABIERTA;
-      POSE[MEDIO][DESTINO] = ABIERTA;
-      POSE[M_A][DESTINO] = ABIERTA;
+      set_pose(ABIERTA);
+      Serial.println("Iron Man!");
+      actual = comm_rasp;
     } else if(comm_rasp == "6"){
       full_stop();
       Serial.println("Full Stop!");
@@ -155,33 +149,47 @@ void debug(){
   set_speed(dedo, speed);
 }
 
+void set_pose(byte pose_aux){
+  full_stop();
+  pose[DESTINO] = pose_aux;
+  estado[METACARPO] = ESPERA;
+  estado[FALANGE] = ESPERA;
+  estado[INDICE] = ESPERA;
+  estado[MEDIO] = ESPERA;
+  estado[M_A] = ESPERA;
+}
+
 void check_dedo(byte dedo){
-  if(POSE[dedo][ESTADO] == REPOSO && POSE[dedo][DESTINO] != POSE[dedo][ANTERIOR]){
+  byte aux = estado[dedo];
+  if(aux == ESPERA){
     start_dedo(dedo);
-  } else if (POSE[dedo][ESTADO] == MOVIMIENTO && get_direction(dedo) == CCW && (POSES[POSE[dedo][DESTINO]][dedo] - rotacion[dedo]) < 0 ){
-    stop_dedo(dedo);
-  } else if (POSE[dedo][ESTADO] == MOVIMIENTO && get_direction(dedo) == CW && (POSES[POSE[dedo][DESTINO]][dedo] - rotacion[dedo]) > 0 ){
-    stop_dedo(dedo);
+  } else if (aux == PROCESO){
+    byte dir = get_direction(dedo);
+    int check = POSES[pose[DESTINO]][dedo] - rotacion[dedo];
+    if(dir == CCW && check < 0){
+      stop_dedo(dedo);
+    } else if(dir == CW && check > 0){
+      stop_dedo(dedo);
+    }
   }
 }
 
 void start_dedo(byte dedo){
-  int check = POSE[dedo][DESTINO] - rotacion[dedo];
+  int check = POSES[pose[DESTINO]][dedo] - rotacion[dedo];
   byte dir;
-  if(check <= 0){
+  if(check < 0){
     dir = CW;
   } else {
     dir = CCW;
   }
   set_direction(dedo, dir);
-  set_speed(dedo, 250);
-  POSE[dedo][ESTADO] = MOVIMIENTO;
+  set_speed(dedo, 200);
+  estado[dedo] = PROCESO;
 }
 
 void stop_dedo(byte dedo){
   set_speed(dedo, 0);
-  POSE[dedo][ESTADO] = REPOSO;
-  POSE[dedo][ANTERIOR] = POSE[dedo][DESTINO];
+  estado[dedo] = TERMINADO;
 }
 
 void full_stop(){
@@ -190,6 +198,11 @@ void full_stop(){
   set_speed(INDICE, 0);
   set_speed(MEDIO, 0);
   set_speed(M_A, 0);
+  estado[METACARPO] = TERMINADO;
+  estado[FALANGE] = TERMINADO;
+  estado[INDICE] = TERMINADO;
+  estado[MEDIO] = TERMINADO;
+  estado[M_A] = TERMINADO;
 }
 
 void isr_motor_metacarpo(){
@@ -224,7 +237,7 @@ void isr_motor(int dedo){
 int get_direction(int dedo){
   int dedo_cw = digitalRead(MANO[dedo][CW]);
   int dedo_ccw = digitalRead(MANO[dedo][CCW]);
-  if(POSE[dedo][PWM] == 0){
+  if(pwms[dedo] == 0){
     return SHORT_BRAKE;
   } else if(dedo_cw == LOW && dedo_ccw == HIGH){
     return CCW;
@@ -252,7 +265,7 @@ void set_direction(int dedo, int dir){
 
 void set_speed(int dedo, byte speed){
   analogWrite(MANO[dedo][PWM], speed);
-  POSE[dedo][PWM] = speed;
+  pwms[dedo] = speed;
 }
 
 //Serial comunicacion
