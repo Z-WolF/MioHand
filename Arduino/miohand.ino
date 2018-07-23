@@ -55,10 +55,10 @@ byte pwms[] = {0, 0, 0, 0, 0};
 //valores destino de rotaciones para poses
 int POSES[][6] = {
   {0, 0, 0, 0, 0, 0},
+  {0, 0, 3000, 3000, 3000, 3000},
   {0, 0, 0, 0, 0, 0},
-  {0, 3000, 0, 0, 0, 0},
-  {0, 3000, 0, 0, 0, 0},
-  {0, 3000, 0, 0, 0, 0}
+  {0, 0, 0, 0, 0, 0},
+  {0, 0, 0, 0, 0, 0}
 };
 
 /*serial input USB valores del raspberry*/
@@ -126,6 +126,10 @@ void loop() {
     } else if (comm_rasp == "valores"){
       Serial.println("Falange: " + String(rotacion[FALANGE]) + ", Metacarpo: " + String(rotacion[METACARPO]) + ", Indice: " + String(rotacion[INDICE]) + ", Medio: " + String(rotacion[MEDIO]) + ", A_M: "+ String(rotacion[M_A]));
       actual = comm_rasp;
+    } else if (comm_rasp == "reset"){
+      reset_values();
+      Serial.println("Falange: " + String(rotacion[FALANGE]) + ", Metacarpo: " + String(rotacion[METACARPO]) + ", Indice: " + String(rotacion[INDICE]) + ", Medio: " + String(rotacion[MEDIO]) + ", A_M: "+ String(rotacion[M_A]));
+      actual = comm_rasp;    
     } else {
       debug();
       actual = comm_rasp;
@@ -136,6 +140,14 @@ void loop() {
   check_dedo(INDICE);
   check_dedo(MEDIO);
   check_dedo(M_A);
+}
+
+void reset_values(){
+  rotacion[FALANGE] = 0;
+  rotacion[METACARPO] = 0;
+  rotacion[INDICE] = 0;
+  rotacion[MEDIO] = 0;
+  rotacion[M_A] = 0;
 }
 
 void debug(){
@@ -166,7 +178,7 @@ void check_dedo(byte dedo){
   } else if (aux == PROCESO){
     byte dir = get_direction(dedo);
     int check = POSES[pose[DESTINO]][dedo] - rotacion[dedo];
-    if(dir == CCW && check < 0){
+    if(dir == CCW && check <= 0){
       stop_dedo(dedo);
     } else if(dir == CW && check > 0){
       stop_dedo(dedo);
