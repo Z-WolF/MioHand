@@ -1,8 +1,10 @@
+import serial
 from PyoConnectLib import *
 
 isMyoConnected = False
 
 myo = Myo(sys.argv[1] if len(sys.argv) >= 2 else None)
+arduino = serial.Serial('/dev/ttyACM0', 9600)
 
 
 def ConnectMyo():
@@ -27,22 +29,32 @@ def DisconnectMyo():
 def printeateste(pose, edge):
     if edge is "on":
         print("Pose: {}".format(pose))
+        arduino.write(bytes(PoseToNum(pose), 'utf-8'))
 
-def printonio():
-    if myo.isUnlocked():
-        myo.mouseMove(600+myo.rotYaw()*2000, 500-myo.rotPitch()*2000)
-        print("Yaw: {}, Pitch: {}".format(600+myo.rotYaw()*2000, 500-myo.rotPitch()*2000))
 
 def deslockeo():
     myo.rotSetCenter()
     myo.unlock("hold")
 
+def PoseToNum(posestr):
+    if posestr == 'rest':
+        return '7'
+    if posestr == 'fist':
+        return '1'
+    if posestr == 'waveIn':
+        return '2'
+    if posestr == 'waveOut':
+        return '3'
+    if posestr == 'fingersSpread':
+        return '4'
+    if posestr == 'doubleTap':
+        return '5'
+    return 'unknown'
+
 
 ConnectMyo()
 myo.Add_onUnlock(lambda: deslockeo())
 myo.Add_onPoseEdge(lambda pose, edge: printeateste(pose, edge))
-#myo.Add_onPeriodic(lambda: printonio())
-
 
 while True:
     if isMyoConnected:
